@@ -105,6 +105,20 @@ install.packages('WeMix')
 #------------------------------------------------
 
 library(dplyr)
+```
+
+    ## 
+    ## Attaching package: 'dplyr'
+
+    ## The following objects are masked from 'package:stats':
+    ## 
+    ##     filter, lag
+
+    ## The following objects are masked from 'package:base':
+    ## 
+    ##     intersect, setdiff, setequal, union
+
+``` r
 data_raw <- erce::erce_2019_qa6
 ```
 
@@ -191,6 +205,22 @@ data_tsl  <- survey::svydesign(
 # Note: we correct that strata with a single cluster.
 
 library(survey)
+```
+
+    ## Loading required package: grid
+
+    ## Loading required package: Matrix
+
+    ## Loading required package: survival
+
+    ## 
+    ## Attaching package: 'survey'
+
+    ## The following object is masked from 'package:graphics':
+    ## 
+    ##     dotchart
+
+``` r
 options(survey.lonely.psu="adjust")
 ```
 
