@@ -1,0 +1,310 @@
+Ejemplo 01: código como desarollo
+================
+edu4050
+Marzo 07, 2024
+
+# Introducción
+
+- La comunicación de resultados de estudios de gran escala, comúnmente
+  incluye la producción de resultados regionales, promedios, o tambien
+  llamados “pooled estimates”. Estos estimados no representan solo un
+  país participante, sino que a un conjunto de los países, o a todos los
+  países en conjunto.
+
+- Sin embargo, las variables de diseño contenidos en la mayoría de los
+  estudios de gran escala, estan construidas para producir estimados
+  generalizables al país que participa; y no para prodcuir estimados
+  para una región como un todo.
+
+- De esta forma, cuando se quiere producor una estimado regional o
+  agregado, se requiere adaptar las variables de diseño publicadas
+  originalmente. Las adaptaciones más comúnes incluyen:
+
+  - crear variables de anidación (i.e., clustering variables)
+  - adaptar las variables de estratificación
+  - escalar los pesos muestrales, de modo que las muestras de cada país
+    pesen de forma equivalente.
+
+- A continuación incluimos un conjunto de pasos y códigos para producir
+  un estimado regional, acerca de la proporcion de estudiantes que
+  alcanza niveles mínimos de competencia lectora, entre los países
+  participantes en ERCE 2019.
+
+# Ejemplo de un estimado agregado
+
+- En el reporte ejecutivo del estudio ERCE 2019 (UNESCO-OREALC, 2021,
+  p14) se indica que la proporción de estudiantes que alcanza niveles
+  mínimos esperados de competencia lectora es de 31.2% en sexto grado. A
+  continuación, incluimos una muestra del texto incluido en este
+  reporte.
+
+<img src="./files/erce_a6_nivel_lectura_ejecutivo.jpg" width="100%" />
+
+# Secuncia del código
+
+- La secuencia de código empleada para producir este estimado regional,
+  incluye diferente pasos. Estos diferentes pasos son:
+
+  - Librerías empleadas
+  - Cargar los datos
+  - Armonizar las variables de anidación
+  - Recodificación de los niveles de logro
+  - Especificar el diseño muestral para las estimaciones
+  - Producir estimaciones con valores plausibles
+  - Editar la tabla generada
+  - Exportar los resultados
+
+El código presente es **una forma** de producir los resultados
+regionales, la cual replica los resultados publicados del estudio.
+
+## Librerías
+
+``` r
+# -------------------------------------------------------------------
+# libraries use in the following code
+# -------------------------------------------------------------------
+
+#------------------------------------------------
+# libraries
+#------------------------------------------------
+
+# collection of libraries to handle data
+install.packages('tidyverse')
+
+# library to install libraries from github
+install.packages('devtools')
+
+# library with ERCE 2019 data
+devtools::install_github('dacarras/erce',force = TRUE)
+
+# library to generate survey estimates
+install.packages('survey')
+
+# library to generate survey estimates
+install.packages('srvyr')
+
+# library to get estimates with plausible values
+install.packages('mitools')
+
+# library to save tables into excel
+install.packages('openxlsx')
+
+# library to fit multilevel models
+install.packages('WeMix')
+```
+
+## Cargar los datos
+
+``` r
+# -------------------------------------------------------------------
+# minimal reading proficiency
+# -------------------------------------------------------------------
+
+#------------------------------------------------
+# load data
+#------------------------------------------------
+
+library(dplyr)
+data_raw <- erce::erce_2019_qa6
+```
+
+## Variables de anidación
+
+``` r
+# -------------------------------------------------------------------
+# minimal reading proficiency
+# -------------------------------------------------------------------
+
+#------------------------------------------------
+# load data
+#------------------------------------------------
+
+#------------------------------------------------
+# clustering variables
+#------------------------------------------------
+
+data_clu <- data_raw %>%
+erce::remove_labels() %>% #<<
+mutate(id_s = as.numeric(as.factor(paste0(IDCNTRY, "_", STRATA)))) %>%
+mutate(id_j = as.numeric(as.factor(paste0(IDCNTRY, "_", IDSCHOOL)))) %>%
+mutate(id_i = seq(1:nrow(.)))
+```
+
+## Recodificació de variables
+
+``` r
+# -------------------------------------------------------------------
+# minimal reading proficiency
+# -------------------------------------------------------------------
+
+#------------------------------------------------
+# recoding proficiency levels
+#------------------------------------------------
+
+data_rec <- data_clu %>%
+mutate(lan_min_1 = case_when(
+LAN_L1 == 'I'   ~ 0,
+LAN_L1 == 'II'  ~ 0,
+LAN_L1 == 'III' ~ 1,
+LAN_L1 == 'IV'  ~ 1)) %>%
+mutate(lan_min_2 = case_when(
+LAN_L2 == 'I'   ~ 0,
+LAN_L2 == 'II'  ~ 0,
+LAN_L2 == 'III' ~ 1,
+LAN_L2 == 'IV'  ~ 1)) %>%
+mutate(lan_min_3 = case_when(
+LAN_L3 == 'I'   ~ 0,
+LAN_L3 == 'II'  ~ 0,
+LAN_L3 == 'III' ~ 1,
+LAN_L3 == 'IV'  ~ 1)) %>%
+mutate(lan_min_4 = case_when(
+LAN_L4 == 'I'   ~ 0,
+LAN_L4 == 'II'  ~ 0,
+LAN_L4 == 'III' ~ 1,
+LAN_L4 == 'IV'  ~ 1)) %>%
+mutate(lan_min_5 = case_when(
+LAN_L5 == 'I'   ~ 0,
+LAN_L5 == 'II'  ~ 0,
+LAN_L5 == 'III' ~ 1,
+LAN_L5 == 'IV'  ~ 1))
+```
+
+## Especificar Diseño Muestral
+
+``` r
+# -------------------------------------------------------------------
+# minimal reading proficiency
+# -------------------------------------------------------------------
+
+#------------------------------------------------
+# data with survey object
+#------------------------------------------------
+
+# survey method: taylor series linearization
+data_tsl  <- survey::svydesign(
+             data    = data_rec, 
+             weights = ~WS,       
+             strata  = ~id_s,
+             id = ~id_j,
+             nest = TRUE)
+
+# Note: we correct that strata with a single cluster.
+
+library(survey)
+options(survey.lonely.psu="adjust")
+```
+
+## Estimar proporciones con valores plausibles
+
+``` r
+# -------------------------------------------------------------------
+# minimal reading proficiency
+# -------------------------------------------------------------------
+
+#------------------------------------------------
+# percentages with plausible values
+#------------------------------------------------
+
+results <- mitools::withPV(
+   mapping = lan_min ~ lan_min_1 + lan_min_2 + lan_min_3 + lan_min_4 + lan_min_5,
+   data = data_tsl,
+   action = quote(
+    survey::svymean( ~lan_min, design = data_tsl)
+    ),
+   rewrite = TRUE
+  )
+
+
+#------------------------------------------------
+# display results
+#------------------------------------------------
+
+summary(mitools::MIcombine(results))
+```
+
+    ## Multiple imputation results:
+    ##       withPV.survey.design(mapping = lan_min ~ lan_min_1 + lan_min_2 + 
+    ##     lan_min_3 + lan_min_4 + lan_min_5, data = data_tsl, action = quote(survey::svymean(~lan_min, 
+    ##     design = data_tsl)), rewrite = TRUE)
+    ##       MIcombine.default(results)
+    ##           results     se (lower upper) missInfo
+    ## lan_min_1    0.31 0.0038    0.3   0.32     32 %
+
+## Editar tabla
+
+``` r
+# -------------------------------------------------------------------
+# minimal reading proficiency
+# -------------------------------------------------------------------
+
+#------------------------------------------------
+# save estimates
+#------------------------------------------------
+
+estimates <- summary(mitools::MIcombine(results))
+```
+
+    ## Multiple imputation results:
+    ##       withPV.survey.design(mapping = lan_min ~ lan_min_1 + lan_min_2 + 
+    ##     lan_min_3 + lan_min_4 + lan_min_5, data = data_tsl, action = quote(survey::svymean(~lan_min, 
+    ##     design = data_tsl)), rewrite = TRUE)
+    ##       MIcombine.default(results)
+    ##           results     se (lower upper) missInfo
+    ## lan_min_1    0.31 0.0038    0.3   0.32     32 %
+
+``` r
+#------------------------------------------------
+# edit table of results
+#------------------------------------------------
+
+
+table_read <- estimates %>%
+               tibble::rownames_to_column("lan_min") %>%
+               rename(
+                lan = results, 
+                lan_se = se,
+                ll = 4,
+                ul = 5,
+                miss = 6
+                ) %>%
+               mutate(lan = lan*100) %>%
+               mutate(lan_se = lan_se*100) %>%
+               mutate(ll = ll*100) %>%
+               mutate(ul = ul*100)
+
+# -----------------------------------------------
+# display table
+# -----------------------------------------------
+
+options(digits=10)
+options(scipen = 999999)
+
+knitr::kable(table_read, digits = 1)
+```
+
+| lan_min   |  lan | lan_se |   ll |  ul | miss |
+|:----------|-----:|-------:|-----:|----:|:-----|
+| lan_min_1 | 31.2 |    0.4 | 30.4 |  32 | 32 % |
+
+## Exportar resultados
+
+``` r
+# -------------------------------------------------------------------
+# minimal reading proficiency
+# -------------------------------------------------------------------
+
+#------------------------------------------------
+# export results
+#------------------------------------------------
+
+table_read %>%
+openxlsx::write.xlsx(., 
+  'table_minimum_reading_proficiency_6th_graders.xlsx',
+  overwrite = TRUE)
+```
+
+## Referencias
+
+UNESCO-OREALC (2021). Los aprendizajes fundamentales en América Latina y
+el Caribe.
+<https://en.unesco.org/sites/default/files/resumen-ejecutivo-informe-regional-logros-factores-erce2019.pdf_0.pdf>
